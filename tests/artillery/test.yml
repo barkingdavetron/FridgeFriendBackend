@@ -1,0 +1,63 @@
+# performance test for user registration, login ingredient handling and recipe retrieval
+# simulates real user load using csv data and token-based auth
+
+config:
+  target: "http://54.246.226.194:5000"  #url deployed on ec2 for testing performance
+  phases:
+    - duration: 20  # test will run for 20 seconds
+      arrivalRate: 15  # 15 new users will arrive per second
+  payload:
+    path: "data/users.csv"   # input file with test users
+    fields:   # column names used in the CSV
+      - username
+      - email
+      - password
+  plugins:
+    ensure: {}
+  processor: "authProcessor.js"
+      # step 1: register a new user using csv data
+scenarios:
+  - name: "Register, login, add ingredients, and fetch recipes"
+    flow:
+      - post:
+          url: "/register"
+          json:
+            username: "{{ username }}"
+            email: "{{ email }}"
+            password: "{{ password }}"
+      # step 2: log in with the same user and capture the jwt token
+      - post:
+          url: "/login"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "jwt"
+      # step 3: add a test ingredient using the jwt for auth
+      - post:
+          url: "/ingredients"
+          headers:
+            Authorization: "{{ jwt }}"
+          json:
+            name: "Tomato"
+            quantity: "3"
+            expiry: "2025-06-01"
+      # step 4: fetch ingredient list to confirm it's stored
+      - get:
+          url: "/getIngredients"
+          headers:
+            Authorization: "{{ jwt }}"
+      # step 5: call ingredients-list to get plain ingredient names
+      - get:
+          url: "/ingredients-list"
+          headers:
+            Authorization: "{{ jwt }}"
+          capture:
+            - json: "$.ingredients"
+              as: "ingredientList"
+      # step 6: fetch recipes using the detected ingredients
+      - get:
+          url: "/recipes"
+          qs:
+            query: "{{ ingredientList }}"
